@@ -1,0 +1,92 @@
+[
+  {
+    "label": "microsandbox",
+    "cmd": [
+      "/home/toks/.microsandbox/bin/msb",
+      "run",
+      "alpine",
+      "--",
+      "/bin/true"
+    ],
+    "iterations": 10,
+    "samples_ms": [
+      323.41938800004755,
+      292.93457500011755,
+      333.4598310000274,
+      333.11022400016554,
+      330.9404369999811,
+      310.76264200009973,
+      298.11810199998945,
+      328.56143999993037,
+      330.51726899998357,
+      335.96609699998226
+    ],
+    "median_ms": 329.53935449995697,
+    "mean_ms": 321.77900050003245,
+    "stdev_ms": 15.593064344861068,
+    "min_ms": 292.93457500011755,
+    "max_ms": 335.96609699998226,
+    "p90_ms": 335.71547039998677
+  },
+  {
+    "label": "docker",
+    "cmd": [
+      "/usr/bin/docker",
+      "run",
+      "--rm",
+      "alpine:latest",
+      "/bin/true"
+    ],
+    "iterations": 10,
+    "samples_ms": [
+      482.8883449999921,
+      461.83258399992155,
+      428.692471000204,
+      461.7718550000518,
+      497.5944939999408,
+      451.24783400001434,
+      450.37820700008524,
+      476.2503349998042,
+      479.68271900003856,
+      455.8423869998478
+    ],
+    "median_ms": 461.8022194999867,
+    "mean_ms": 464.61812309999004,
+    "stdev_ms": 19.856593597142055,
+    "min_ms": 428.692471000204,
+    "max_ms": 497.5944939999408,
+    "p90_ms": 496.12387909994595
+  },
+  {
+    "label": "firecracker",
+    "cmd": [
+      "/usr/local/bin/firecracker",
+      "--no-api",
+      "--config-file",
+      "/tmp/bench/fc-config.json"
+    ],
+    "iterations": 10,
+    "samples_ms": [
+      810.1549660000273,
+      812.0993210000051,
+      804.7148900000138,
+      808.3518210000875,
+      801.0546980001436,
+      796.2062839999362,
+      803.2687790000637,
+      806.4934839999296,
+      805.7016059999569,
+      809.0403189999051
+    ],
+    "median_ms": 806.0975449999432,
+    "mean_ms": 805.7086168000069,
+    "stdev_ms": 4.69287338332683,
+    "min_ms": 796.2062839999362,
+    "max_ms": 812.0993210000051,
+    "p90_ms": 811.9048855000074
+  },
+  {
+    "label": "cloud-hypervisor",
+    "error": "cmd failed (-9): /usr/local/bin/cloud-hypervisor --kernel /tmp/bench/vmlinux --disk path=/tmp/bench/alpine.ext4,readonly=on --cmdline console=ttyS0 root=/dev/vda rw init=/init reboot=k panic=-1 pci=off --cpus boot=1 --memory size=128M --serial off --console off\nstdout: ''\nstderr: ''"
+  }
+]

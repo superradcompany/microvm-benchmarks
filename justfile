@@ -7,7 +7,7 @@ default:
     @just --list
 
 # Install all runtimes
-install: install-docker install-firecracker install-microsandbox
+install: install-docker install-firecracker install-microsandbox install-cloud-hypervisor install-smolvm install-libkrun
 
 install-docker:
     bash runtimes/docker/install.sh
@@ -17,6 +17,15 @@ install-firecracker:
 
 install-microsandbox:
     bash runtimes/microsandbox/install.sh
+
+install-cloud-hypervisor:
+    bash runtimes/cloud-hypervisor/install.sh
+
+install-smolvm:
+    bash runtimes/smolvm/install.sh
+
+install-libkrun:
+    bash runtimes/libkrun/install.sh
 
 # Download the Firecracker kernel into BENCH_DIR (shared across pillars)
 download-kernel:

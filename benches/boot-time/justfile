@@ -13,11 +13,12 @@ setup: install prepare
 install:
     cd ../.. && just install
 
-# Build this bench's adapter artifacts (kernel + rootfs + fc-config)
+# Build this bench's adapter artifacts (kernel + rootfs + fc-config + krunvm template)
 prepare:
     cd ../.. && just download-kernel
     BENCH_DIR={{bench_dir}} bash adapters/firecracker/rootfs.sh
     BENCH_DIR={{bench_dir}} bash adapters/firecracker/config.sh
+    bash adapters/libkrun/prepare.sh
 
 # Run the benchmark (10 iterations + 2 warmups by default)
 bench *args:

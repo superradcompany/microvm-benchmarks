@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Cold-start boot-time benchmark: microsandbox vs Docker vs Firecracker.
+"""Cold-start boot-time benchmark: microVM and container runtimes.
 
 Wall-clock from CLI invocation to process exit. Same alpine userspace across
-all three runtimes (built via setup.sh). Run after setup.sh has prepared the
-bench directory with vmlinux + alpine.ext4 + fc-config.json.
+all runtimes. Run after `just setup` has prepared the bench directory with
+vmlinux + alpine.ext4 + fc-config.json and the krunvm template.
 """
 
 import argparse
@@ -23,6 +23,9 @@ def runtime_paths() -> dict[str, str]:
         "msb": f"{home}/.microsandbox/bin/msb",
         "docker": shutil.which("docker") or "docker",
         "firecracker": shutil.which("firecracker") or "firecracker",
+        "cloud-hypervisor": shutil.which("cloud-hypervisor") or "cloud-hypervisor",
+        "smolvm": shutil.which("smolvm") or "smolvm",
+        "krunvm": shutil.which("krunvm") or "krunvm",
     }
 
 
@@ -91,18 +94,43 @@ def main():
         "--skip",
         action="append",
         default=[],
-        choices=["msb", "docker", "firecracker"],
+        choices=[
+            "microsandbox", "docker", "firecracker",
+            "cloud-hypervisor", "smolvm", "libkrun",
+        ],
     )
     args = ap.parse_args()
 
     output = args.output or (args.bench_dir / "results.json")
     bins = runtime_paths()
     fc_config = args.bench_dir / "fc-config.json"
+    vmlinux = args.bench_dir / "vmlinux"
+    rootfs = args.bench_dir / "alpine.ext4"
+    ch_cmdline = (
+        "console=ttyS0 root=/dev/vda rw init=/init reboot=k panic=-1 pci=off"
+    )
+    krunvm_name = os.environ.get("KRUNVM_NAME", "bench-alpine")
 
     runs = [
         ("microsandbox", [bins["msb"], "run", "alpine", "--", "/bin/true"], None),
         ("docker", [bins["docker"], "run", "--rm", "alpine:latest", "/bin/true"], None),
         ("firecracker", [bins["firecracker"], "--no-api", "--config-file", str(fc_config)], str(args.bench_dir)),
+        (
+            "cloud-hypervisor",
+            [
+                bins["cloud-hypervisor"],
+                "--kernel", str(vmlinux),
+                "--disk", f"path={rootfs},readonly=on",
+                "--cmdline", ch_cmdline,
+                "--cpus", "boot=1",
+                "--memory", "size=128M",
+                "--serial", "off",
+                "--console", "off",
+            ],
+            str(args.bench_dir),
+        ),
+        ("smolvm", [bins["smolvm"], "machine", "run", "--image", "alpine", "--", "/bin/true"], None),
+        ("libkrun", [bins["krunvm"], "start", krunvm_name, "/bin/true"], None),
     ]
 
     print(f"iterations: {args.iterations} (warmup {args.warmup})")
