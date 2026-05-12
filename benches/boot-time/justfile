@@ -1,0 +1,32 @@
+set shell := ["bash", "-uc"]
+
+bench_dir := env_var_or_default("BENCH_DIR", env_var("HOME") + "/bench")
+
+# Show available recipes
+default:
+    @just --list
+
+# Full setup: install runtimes + build this bench's artifacts
+setup: install prepare
+
+# Install all runtimes (delegates to top-level)
+install:
+    cd ../.. && just install
+
+# Build this bench's adapter artifacts (kernel + rootfs + fc-config)
+prepare:
+    cd ../.. && just download-kernel
+    BENCH_DIR={{bench_dir}} bash adapters/firecracker/rootfs.sh
+    BENCH_DIR={{bench_dir}} bash adapters/firecracker/config.sh
+
+# Run the benchmark (10 iterations + 2 warmups by default)
+bench *args:
+    python3 bench.py --bench-dir {{bench_dir}} {{args}}
+
+# Smoke test with fewer iterations
+bench-quick:
+    python3 bench.py --bench-dir {{bench_dir}} --iterations 3 --warmup 1
+
+# Wipe this bench's BENCH_DIR artifacts
+clean:
+    rm -rf {{bench_dir}}

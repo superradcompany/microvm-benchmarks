@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.DS_Store
+
+# Artifacts produced by setup.sh — these are reproducible from source, not checked in.
+**/vmlinux
+**/alpine.ext4
+**/alpine-rootfs.tar
+**/rootfs-mnt/
+**/firecracker.tgz
+**/release-*/
+
+# Ad-hoc results from local runs. Curated, dated results go in results/ subdirs.
+results.json
