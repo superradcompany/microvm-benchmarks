@@ -117,20 +117,11 @@ def main():
         ("firecracker", [bins["firecracker"], "--no-api", "--config-file", str(fc_config)], str(args.bench_dir)),
         (
             "cloud-hypervisor",
-            [
-                bins["cloud-hypervisor"],
-                "--kernel", str(vmlinux),
-                "--disk", f"path={rootfs},readonly=on",
-                "--cmdline", ch_cmdline,
-                "--cpus", "boot=1",
-                "--memory", "size=128M",
-                "--serial", "off",
-                "--console", "off",
-            ],
+            ["bash", str(Path(__file__).parent / "adapters" / "cloud-hypervisor" / "run.sh")],
             str(args.bench_dir),
         ),
-        ("smolvm", [bins["smolvm"], "machine", "run", "--image", "alpine", "--", "/bin/true"], None),
-        ("libkrun", [bins["krunvm"], "start", krunvm_name, "/bin/true"], None),
+        ("smolvm", [str(args.bench_dir / "alpine-packed"), "run", "--", "/bin/true"], None),
+        ("libkrun", ["buildah", "unshare", bins["krunvm"], "start", krunvm_name, "/bin/true"], None),
     ]
 
     print(f"iterations: {args.iterations} (warmup {args.warmup})")

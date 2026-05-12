@@ -15,15 +15,39 @@ fi
 # source. The setup script on the bench box will pick whichever works.
 if command -v apt-get >/dev/null && apt-cache show krunvm >/dev/null 2>&1; then
   sudo apt-get install -y krunvm
-elif command -v dnf >/dev/null; then
-  sudo dnf install -y krunvm
-else
-  # No prebuilt package. Skip install rather than fail the pipeline; bench.py
-  # will report this runtime as failed and continue. To enable, build from
-  # source: https://github.com/containers/krunvm (requires libkrun, buildah,
-  # asciidoctor, Rust toolchain).
-  echo "WARN: no prebuilt krunvm package available; skipping. Build from source"
-  echo "      manually if you want libkrun measurements: https://github.com/containers/krunvm"
+  echo "krunvm installed: $(krunvm --version 2>&1 | head -1)"
   exit 0
 fi
+if command -v dnf >/dev/null; then
+  sudo dnf install -y krunvm
+  echo "krunvm installed: $(krunvm --version 2>&1 | head -1)"
+  exit 0
+fi
+
+# No prebuilt package. Build libkrun + libkrunfw + krunvm from source.
+# Ubuntu 24.04 ships rustc 1.75 which is too old (libkrun needs edition2024),
+# so we install rustup-managed stable Rust alongside.
+echo "no prebuilt krunvm; building from source"
+sudo apt-get install -y -q build-essential libclang-dev llvm-dev clang \
+  flex bison libelf-dev bc cpio xz-utils libssh2-1-dev libdbus-1-dev libudev-dev \
+  buildah asciidoctor patch pkg-config libcap-dev python3-pyelftools >/dev/null
+
+if ! command -v rustup >/dev/null && [ ! -x "$HOME/.cargo/bin/rustup" ]; then
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal >/dev/null
+fi
+# shellcheck disable=SC1091
+source "$HOME/.cargo/env"
+
+cd /tmp
+[ -d libkrun ] || git clone --depth 1 https://github.com/containers/libkrun.git
+( cd libkrun && make && sudo make install )
+
+[ -d libkrunfw ] || git clone --depth 1 https://github.com/containers/libkrunfw.git
+( cd libkrunfw && make && sudo make install )
+
+[ -d krunvm ] || git clone --depth 1 https://github.com/containers/krunvm.git
+( cd krunvm && RUSTFLAGS="-L /usr/local/lib64" make && sudo install -m 755 target/release/krunvm /usr/local/bin/krunvm )
+
+echo "/usr/local/lib64" | sudo tee /etc/ld.so.conf.d/libkrun.conf >/dev/null
+sudo ldconfig
 echo "krunvm installed: $(krunvm --version 2>&1 | head -1)"

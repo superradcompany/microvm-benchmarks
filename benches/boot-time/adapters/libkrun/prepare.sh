@@ -9,9 +9,10 @@ if ! command -v krunvm >/dev/null; then
   exit 0
 fi
 VM_NAME="${KRUNVM_NAME:-bench-alpine}"
-if krunvm list 2>/dev/null | grep -q "^${VM_NAME}\b"; then
+# krunvm needs to run inside a `buildah unshare` session for namespace privileges.
+if buildah unshare krunvm list 2>/dev/null | grep -q "^${VM_NAME}\b"; then
   echo "krunvm template '${VM_NAME}' already exists"
   exit 0
 fi
-krunvm create docker.io/library/alpine --name "$VM_NAME"
+buildah unshare krunvm create docker.io/library/alpine --name "$VM_NAME"
 echo "krunvm template '${VM_NAME}' created"

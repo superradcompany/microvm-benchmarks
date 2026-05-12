@@ -18,6 +18,7 @@ prepare:
     cd ../.. && just download-kernel
     BENCH_DIR={{bench_dir}} bash adapters/firecracker/rootfs.sh
     BENCH_DIR={{bench_dir}} bash adapters/firecracker/config.sh
+    BENCH_DIR={{bench_dir}} bash adapters/smolvm/prepare.sh
     bash adapters/libkrun/prepare.sh
 
 # Run the benchmark (10 iterations + 2 warmups by default)
