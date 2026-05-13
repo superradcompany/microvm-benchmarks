@@ -38,24 +38,39 @@ Docker and msb consume the alpine OCI image directly; no adapter directory neede
 
 Raw: [`results/2026-05-11-c3-standard-192-metal.json`](./results/2026-05-11-c3-standard-192-metal.json).
 
-### 2026-05-12 · c3-standard-192-metal (rerun, same hardware spec)
+### 2026-05-12 · c3-standard-192-metal (5 runtimes)
 
-Reproducibility check on a fresh c3-standard-192-metal instance.
+Fresh c3-standard-192-metal. Same hardware spec as the prior runs.
 
 | runtime | median | mean | min | max | stdev |
 |---|---:|---:|---:|---:|---:|
-| **microsandbox** | **330 ms** | 322 | 293 | 336 | 16 |
-| docker | 462 ms | 465 | 429 | 498 | 20 |
-| firecracker | 806 ms | 806 | 796 | 812 | 5 |
+| **libkrun** (krunvm) | **310 ms** | 314 | 289 | 343 | 19 |
+| **microsandbox** | **320 ms** | 319 | 293 | 342 | 13 |
+| docker | 463 ms | 461 | 416 | 493 | 21 |
+| firecracker | 808 ms | 807 | 802 | 811 | 3 |
+| smolvm (packed) | 6219 ms | 6347 | 6190 | 7473 | 396 |
 
-Raw: [`results/2026-05-12-c3-standard-192-metal-rerun.json`](./results/2026-05-12-c3-standard-192-metal-rerun.json). Same ratios as the prior run, within stdev. Reproducible.
+Raw: [`results/2026-05-12-c3-standard-192-metal-5way.json`](./results/2026-05-12-c3-standard-192-metal-5way.json).
+
+**Reading the numbers:**
+
+- **libkrun via krunvm** clocks ~10 ms faster than microsandbox. That's the cost of msb's CLI + agent wrapper around the same libkrun underneath. Useful diagnostic; the overhead is small.
+- **microsandbox vs Firecracker**: 2.5× faster (320 vs 808 ms). Holds across runs.
+- **Docker faster than Firecracker** because Docker doesn't boot a kernel (host kernel + namespaces only).
+- **smolvm at 6.2 s** is dominated by smolvm's daemon-spawn architecture. The packed-binary mode pre-bakes the OCI image (no network in the measured path), but each ephemeral invocation still spins up a per-VM daemon process, waits for vsock handshake, runs the workload, and tears down. The actual VM boot inside is fast (likely sub-second). The 6 s is a smolvm architectural choice, not a hypervisor cost.
+
+### Earlier runs (same methodology)
+
+| date | runtimes | notes |
+|---|---|---|
+| 2026-05-11 | msb, docker, firecracker | [json](./results/2026-05-11-c3-standard-192-metal.json) — original headline run |
+| 2026-05-12 (am) | msb, docker, firecracker | [json](./results/2026-05-12-c3-standard-192-metal-rerun.json) — reproducibility check |
+| 2026-05-12 (pm) | msb, docker, firecracker, smolvm, libkrun | [json](./results/2026-05-12-c3-standard-192-metal-5way.json) — adds libkrun + smolvm |
 
 ### Pending runtimes
 
 | runtime | status | notes |
 |---|---|---|
-| cloud-hypervisor | works in isolation, hangs in bench | Guest reboot doesn't trigger CH exit the way Firecracker handles it. Needs investigation of CH's shutdown signaling (different reboot kernel arg, or API-driven shutdown). Adapter stub at `adapters/cloud-hypervisor/` to add. |
-| smolvm | needs persistent-mode adapter | Ephemeral `machine run` always re-pulls (~7.5 s pull dominates a 300 ms boot). Persistent-mode (`machine create` + `start`) needs a different harness pattern. |
-| libkrun (via krunvm) | not installed | krunvm isn't packaged for Ubuntu 24.04. Needs source build of libkrun + krunvm. Would measure raw libkrun overhead vs microsandbox. |
+| cloud-hypervisor | adapter wrapper works in isolation but kernel panics on init reach in the bench loop | Wrapper at `adapters/cloud-hypervisor/run.sh` SIGPIPEs CH when the guest /init prints READY. Boots cleanly when invoked alone, but inside the bench loop the kernel panics before reaching userspace — likely a disk-device naming or virtio-blk config difference vs Firecracker. Needs deeper CH investigation. |
 
 Methodology and analysis: [microsandbox.dev/blog/microvm-cold-start-benchmark](https://microsandbox.dev/blog/microvm-cold-start-benchmark).
