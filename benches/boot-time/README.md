@@ -28,19 +28,7 @@ Docker and msb consume the alpine OCI image directly; no adapter directory neede
 
 ## Results
 
-### 2026-05-11 · c3-standard-192-metal (Intel Sapphire Rapids, bare-metal Linux/KVM)
-
-| runtime | median | mean | min | max | stdev |
-|---|---:|---:|---:|---:|---:|
-| **microsandbox** | **326 ms** | 323 | 312 | 331 | 7 |
-| docker | 458 ms | 457 | 438 | 484 | 14 |
-| firecracker | 806 ms | 805 | 795 | 815 | 7 |
-
-Raw: [`results/2026-05-11-c3-standard-192-metal.json`](./results/2026-05-11-c3-standard-192-metal.json).
-
-### 2026-05-12 · c3-standard-192-metal (5 runtimes)
-
-Fresh c3-standard-192-metal. Same hardware spec as the prior runs.
+### 2026-05-12 · c3-standard-192-metal (Intel Sapphire Rapids, bare-metal Linux/KVM)
 
 | runtime | median | mean | min | max | stdev |
 |---|---:|---:|---:|---:|---:|
@@ -58,14 +46,6 @@ Raw: [`results/2026-05-12-c3-standard-192-metal-5way.json`](./results/2026-05-12
 - **microsandbox vs Firecracker**: 2.5× faster (320 vs 808 ms). Holds across runs.
 - **Docker faster than Firecracker** because Docker doesn't boot a kernel (host kernel + namespaces only).
 - **smolvm at 6.2 s** is dominated by smolvm's daemon-spawn architecture. The packed-binary mode pre-bakes the OCI image (no network in the measured path), but each ephemeral invocation still spins up a per-VM daemon process, waits for vsock handshake, runs the workload, and tears down. The actual VM boot inside is fast (likely sub-second). The 6 s is a smolvm architectural choice, not a hypervisor cost.
-
-### Earlier runs (same methodology)
-
-| date | runtimes | notes |
-|---|---|---|
-| 2026-05-11 | msb, docker, firecracker | [json](./results/2026-05-11-c3-standard-192-metal.json) — original headline run |
-| 2026-05-12 (am) | msb, docker, firecracker | [json](./results/2026-05-12-c3-standard-192-metal-rerun.json) — reproducibility check |
-| 2026-05-12 (pm) | msb, docker, firecracker, smolvm, libkrun | [json](./results/2026-05-12-c3-standard-192-metal-5way.json) — adds libkrun + smolvm |
 
 ### Pending runtimes
 
