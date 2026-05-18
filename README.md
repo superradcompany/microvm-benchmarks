@@ -14,6 +14,7 @@ benches/<bench>/results/               # dated, machine-tagged result JSONs
 ## Benches
 
 - [`benches/boot-time/`](./benches/boot-time) — cold-start wall-clock (microsandbox, Docker, Firecracker)
+- [`benches/fs/`](./benches/fs) — guest-visible filesystem performance (microsandbox vs Docker)
 
 ## Running
 

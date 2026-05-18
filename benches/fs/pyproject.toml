@@ -1,0 +1,9 @@
+[project]
+name = "microvm-benchmarks-fs"
+version = "0.1.0"
+description = "Filesystem benchmarks: microsandbox vs Docker"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
