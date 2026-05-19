@@ -119,4 +119,4 @@ Raw: [`results/20260519T150922Z-bench.json`](./results/20260519T150922Z-bench.js
 | `concurrent_negative_lookup_4t` | Parallel negative lookups over the stdlib tree across 4 threads |
 | `concurrent_readdir_4t` | Parallel `scandir()` passes over the stdlib tree across 4 threads |
 
-Methodology and analysis: [microsandbox.dev/blog/block-backed-rootfs](https://microsandbox.dev/blog/block-backed-rootfs).
+Methodology and analysis: [microsandbox.dev/blog/oci-filesystem-47x-faster](https://microsandbox.dev/blog/oci-filesystem-47x-faster).
