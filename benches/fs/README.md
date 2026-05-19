@@ -32,29 +32,37 @@ Per-runtime details (Docker's `--tmpfs /tmp` for fair `/tmp` comparison, msb's `
 
 ## Results
 
-### 2026-05-08 · v0.3.14 → v0.4 mixed FS suite
+### 2026-05-19 · macOS arm64 · msb 0.4.6 vs Docker 29.4.0
 
-Across 14 mixed guest-visible filesystem workloads, the geometric mean speedup from v0.3.14 to v0.4 was **47.18×**. Eight biggest movers (`python:3.12-slim`, 3 iterations, `bench_fs.py --baseline` mode):
+100 iterations on `python:3.12-slim`. Median per workload, the `docker/msb` ratio (msb wins where >1), and msb's standard deviation.
 
-| workload | speedup | exercises |
-|---|---:|---|
-| `file_delete_1k` | 1109.94× | /tmp tmpfs |
-| `rename_1k` | 876.58× | /tmp tmpfs |
-| `small_file_create_1k` | 240.78× | /tmp tmpfs |
-| `metadata_scan_stdlib` | 240.28× | rootfs |
-| `read_all_py_stdlib` | 116.40× | rootfs |
-| `deep_tree_traverse` | 47.16× | /tmp tmpfs |
-| `concurrent_read_4t` | 20.93× | rootfs |
-| `random_read_stdlib` | 4.01× | rootfs |
+```text
+Workload              Docker (med)  msb (med)  docker/msb      msb σ
+────────────────────  ────────────  ─────────  ──────────  ─────────
+metadata_scan_stdlib       1.73 ms    1.53 ms       1.13x   ±59.5 µs
+read_all_py_stdlib         5.25 ms    4.66 ms       1.13x  ±178.1 µs
+deep_tree_traverse         4.37 ms    4.47 ms       0.98x  ±465.1 µs
+random_read_stdlib         1.13 ms   992.4 µs       1.14x   ±1.52 ms
+small_file_create_1k       5.20 ms    4.71 ms       1.10x   ±1.37 ms
+mid_file_create_100        1.20 ms   963.2 µs       1.25x  ±184.8 µs
+seq_write_fsync_16m        1.88 ms    1.25 ms       1.50x  ±210.9 µs
+shm_write_fsync_16m        1.92 ms    1.24 ms       1.55x  ±336.8 µs
+seq_read_16m              702.0 µs   657.1 µs       1.07x   ±42.6 µs
+mmap_read_16m             685.9 µs   582.0 µs       1.18x   ±44.7 µs
+file_delete_1k            889.3 µs   747.3 µs       1.19x   ±71.4 µs
+rename_1k                  1.15 ms   984.0 µs       1.17x   ±80.5 µs
+mixed_read_write           4.78 ms    4.44 ms       1.08x  ±240.1 µs
+concurrent_read_4t         9.68 ms    4.21 ms       2.30x  ±389.0 µs
+```
+
+Raw: [`results/20260519T150922Z-bench.json`](./results/20260519T150922Z-bench.json).
 
 **Reading the numbers:**
 
-- The rootfs rows (`metadata_scan_stdlib`, `read_all_py_stdlib`, `concurrent_read_4t`, `random_read_stdlib`) are the cleanest measure of the new OCI path: lookups and reads now stay inside the guest kernel instead of bouncing through the host.
-- The /tmp tmpfs rows (`file_delete_1k`, `rename_1k`, `small_file_create_1k`, `deep_tree_traverse`) come from cutting the FUSE round-trip on guest tmpfs workloads, which is a separate runtime decision rather than the EROFS lower-rootfs path.
-
-### Pending: cross-runtime (msb vs docker) absolute-time run
-
-A canonical bare-metal Linux/KVM run comparing the two runtimes head-to-head per workload (the analogue of `boot-time/`'s 5-way table) hasn't been committed yet. When it lands it will appear here in the same shape.
+- `concurrent_read_4t` is msb's biggest win at 2.3×. Multi-threaded reads of the Python stdlib get the most out of the kernel-EROFS path.
+- The fsync rows (`seq_write_fsync_16m`, `shm_write_fsync_16m`) are ~1.5× faster on msb. msb's guest-side tmpfs is a cleaner fsync target than Docker's host-backed tmpfs.
+- Everything else clusters in the 1.07–1.25× range. `deep_tree_traverse` at 0.98× is within noise.
+- This is a developer-laptop run (macOS arm64). A bare-metal Linux/KVM run (the fs analogue of `boot-time/`'s c3-standard-192-metal table) is still pending.
 
 ## Workloads
 
