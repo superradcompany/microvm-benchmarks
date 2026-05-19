@@ -1,0 +1,28 @@
+set shell := ["bash", "-uc"]
+
+# Show available recipes
+default:
+    @just --list
+
+# Full setup: install runtimes (no per-runtime prepare; both consume OCI directly)
+setup: install
+
+# Install all runtimes (delegates to top-level)
+install:
+    cd ../.. && just install
+
+# Run the mixed filesystem suite (rootfs reads + /tmp + /dev/shm); pass-through args go to bench_fs.py
+bench *args:
+    uv run bench_fs.py {{args}}
+
+# Run the fsmeta-focused suite (rootfs lookup / readdir / read patterns); pass-through args go to bench_fsmeta.py
+bench-fsmeta *args:
+    uv run bench_fsmeta.py {{args}}
+
+# Smoke test with fewer iterations (mixed suite)
+bench-quick:
+    uv run bench_fs.py --iterations 3
+
+# Remove untracked results JSONs (keeps committed curated runs)
+clean:
+    cd results && git clean -f -- '*.json'

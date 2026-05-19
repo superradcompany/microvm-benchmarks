@@ -15,3 +15,6 @@ venv/
 
 # Ad-hoc results from local runs. Curated, dated results go in results/ subdirs.
 results.json
+
+# fs bench legacy local output (new default writes to BENCH_DIR/results-fs.json)
+**/build/

@@ -1,70 +1,64 @@
 # fs
 
-Guest-visible filesystem benchmarks comparing microsandbox and Docker. Workloads run inside the guest and report their own timings, so results reflect the full I/O stack as seen by the application — not just host-side wall clock.
+Guest-visible filesystem benchmarks comparing microsandbox and Docker. Workloads run inside the guest and report their own timings, so results reflect the full I/O stack as seen by the application, not just host-side wall clock.
 
 ## Run it
 
-Requires `msb` and `docker` on `PATH` (or pass `--msb-bin` / `--docker-bin`). [`uv`](https://docs.astral.sh/uv/) for the Python harness.
+Bare-metal Linux x86_64 with `/dev/kvm`. Tested on Ubuntu 24.04. Requires [`uv`](https://docs.astral.sh/uv/) for the Python harness.
 
 ```bash
-uv run bench_fs.py
-uv run bench_fsmeta.py
+just setup            # install runtimes (msb, docker)
+just bench            # 100 iterations of the mixed suite, writes a dated JSON to results/
+just bench-fsmeta     # rootfs-only suite (lookup / readdir / read patterns)
 ```
 
-`bench_fs.py` runs the general mixed filesystem suite against `python:3.12-slim` and writes a timestamped JSON result to `build/bench/fs/`. It mounts Docker `/tmp` as `tmpfs` so temp-file workloads match the default OCI `msb` sandbox configuration.
+Each run produces a new dated file in `results/` (e.g. `results/<timestamp>-bench.json`); nothing is overwritten. Curate by deleting runs you don't want and committing the ones you do. `just clean` removes untracked `results/*.json`, leaving committed runs alone.
 
-`bench_fsmeta.py` runs the rootfs-only merged-view suite against `python:3.12` and writes a timestamped JSON result to `build/bench/fsmeta/`.
+`just bench-quick` runs the mixed suite at 3 iterations as a smoke test. For other flags (custom image, workload selection, baseline comparison), see `just bench --help` / `just bench-fsmeta --help`.
 
-## Options
+## Layout
 
-```bash
-# Custom image and iteration count
-uv run bench_fs.py --image python:3.12-slim --iterations 10
-uv run bench_fsmeta.py --image python:3.12 --iterations 10
-
-# Run specific workloads only
-uv run bench_fs.py --workload metadata_scan_stdlib --workload seq_read_16m
-uv run bench_fsmeta.py --workload negative_lookup_stdlib --workload concurrent_readdir_4t
-
-# Multiple images in one run
-uv run bench_fs.py --image python:3.12-slim --image python:3.12
-uv run bench_fsmeta.py --image python:3.12 --image python:3.13
-
-# Skip image pulls for warm-cache comparisons
-uv run bench_fs.py --skip-pull
-uv run bench_fsmeta.py --skip-pull
+```
+bench_fs.py             # mixed-suite harness
+bench_fsmeta.py         # fsmeta-suite harness
+_common.py              # shared helpers (run_cmd, try_cleanup, require_bin)
+adapters/
+  docker.py             # DockerAdapter: pull / start / exec_python / cleanup
+  microsandbox.py       # MicrosandboxAdapter: + inspect_image for fsmeta
+results/                # dated, hardware-tagged JSONs
 ```
 
-## Comparing builds
+Per-runtime details (Docker's `--tmpfs /tmp` for fair `/tmp` comparison, msb's `create + exec + stop + remove` sequence, the `msb image inspect` call fsmeta uses to report layer counts) live in the adapter modules. The `boot-time/adapters/` cousins are shell scripts because boot-time invokes runtimes as one-shot CLI calls; fs needs to inject guest Python source per iteration and read JSON back, which is clumsy via shell.
 
-Save a baseline, build the new `msb` version, then compare:
+## Results
 
-```bash
-# Save a baseline against the installed msb
-uv run bench_fs.py --output baselines/before.json
-uv run bench_fsmeta.py --output baselines/fsmeta-before.json
+### 2026-05-08 · v0.3.14 → v0.4 mixed FS suite
 
-# Benchmark a new binary against the baseline
-uv run bench_fs.py \
-  --msb-bin /path/to/new/msb \
-  --output results/after.json \
-  --baseline baselines/before.json
+Across 14 mixed guest-visible filesystem workloads, the geometric mean speedup from v0.3.14 to v0.4 was **47.18×**. Eight biggest movers (`python:3.12-slim`, 3 iterations, `bench_fs.py --baseline` mode):
 
-uv run bench_fsmeta.py \
-  --msb-bin /path/to/new/msb \
-  --output results/fsmeta-after.json \
-  --baseline baselines/fsmeta-before.json
-```
+| workload | speedup | exercises |
+|---|---:|---|
+| `file_delete_1k` | 1109.94× | /tmp tmpfs |
+| `rename_1k` | 876.58× | /tmp tmpfs |
+| `small_file_create_1k` | 240.78× | /tmp tmpfs |
+| `metadata_scan_stdlib` | 240.28× | rootfs |
+| `read_all_py_stdlib` | 116.40× | rootfs |
+| `deep_tree_traverse` | 47.16× | /tmp tmpfs |
+| `concurrent_read_4t` | 20.93× | rootfs |
+| `random_read_stdlib` | 4.01× | rootfs |
 
-## Suites
+**Reading the numbers:**
 
-`bench_fs.py` is the broad mixed filesystem suite. It includes rootfs reads, temp-file workloads under `/tmp`, and `/dev/shm`. Docker runs with `--tmpfs /tmp` so `/tmp` comparisons stay aligned with the default OCI `msb` runtime.
+- The rootfs rows (`metadata_scan_stdlib`, `read_all_py_stdlib`, `concurrent_read_4t`, `random_read_stdlib`) are the cleanest measure of the new OCI path: lookups and reads now stay inside the guest kernel instead of bouncing through the host.
+- The /tmp tmpfs rows (`file_delete_1k`, `rename_1k`, `small_file_create_1k`, `deep_tree_traverse`) come from cutting the FUSE round-trip on guest tmpfs workloads, which is a separate runtime decision rather than the EROFS lower-rootfs path.
 
-`bench_fsmeta.py` is the fsmeta-focused suite. It only measures rootfs lookup, `readdir()`, and read patterns that depend on the merged read-only lower view. It also prints the cached image layer count so flat images are easy to spot.
+### Pending: cross-runtime (msb vs docker) absolute-time run
+
+A canonical bare-metal Linux/KVM run comparing the two runtimes head-to-head per workload (the analogue of `boot-time/`'s 5-way table) hasn't been committed yet. When it lands it will appear here in the same shape.
 
 ## Workloads
 
-### `bench_fs.py`
+### `bench_fs.py`: mixed suite
 
 **Rootfs / read-only:**
 
@@ -105,7 +99,7 @@ uv run bench_fsmeta.py \
 | `mixed_read_write` | Alternate reading rootfs files and writing temp files (500 each) |
 | `concurrent_read_4t` | Read all stdlib `.py` files across 4 threads |
 
-### `bench_fsmeta.py`
+### `bench_fsmeta.py`: fsmeta-focused suite
 
 | Name | What it measures |
 |---|---|
@@ -117,12 +111,4 @@ uv run bench_fsmeta.py \
 | `concurrent_negative_lookup_4t` | Parallel negative lookups over the stdlib tree across 4 threads |
 | `concurrent_readdir_4t` | Parallel `scandir()` passes over the stdlib tree across 4 threads |
 
-## Notes
-
-- All workloads run in warm sandboxes with a warmup iteration before measured runs.
-- Fresh container and sandbox per workload — no state leakage between runs.
-- Image pulls are timed separately from workload measurements.
-- `bench_fs.py` mounts Docker `/tmp` as `tmpfs` to match the default OCI `msb` `/tmp` mount and keep `/tmp` workloads apples-to-apples.
-- Keep image, workloads, and iteration count the same across comparison runs.
-- `bench_fsmeta.py` is most informative on images with more layer fanout; 8+ layers usually gives a stronger merged-view signal than slim images.
-- Files under `build/bench/` are disposable; save durable baselines to `baselines/`.
+Methodology and analysis: [microsandbox.dev/blog/block-backed-rootfs](https://microsandbox.dev/blog/block-backed-rootfs).

@@ -8,10 +8,14 @@ Bare-metal Linux x86_64 with `/dev/kvm`. Tested on Ubuntu 24.04.
 
 ```bash
 just setup        # install runtimes + build this bench's artifacts
-just bench        # 10 iterations + 2 warmups, prints summary, writes results.json
+just bench        # 10 iterations + 2 warmups, prints summary, writes a dated JSON to results/
 ```
 
-Artifacts land in `~/bench/` by default. Override with `BENCH_DIR=/path bash adapters/firecracker/rootfs.sh` etc.
+Each run produces a new dated file in `results/` (e.g. `results/<timestamp>-bench.json`); nothing is overwritten. Curate by deleting runs you don't want and committing the ones you do.
+
+`just bench-quick` runs the same harness at 3 iterations + 1 warmup as a smoke test. For other flags (skip a runtime, custom iteration count, alternate bench dir), see `python3 bench.py --help`.
+
+Artifact staging (vmlinux, alpine.ext4, fc-config) lands in `~/bench/` by default. Override with `BENCH_DIR=/path bash adapters/firecracker/rootfs.sh` etc., or pass `--bench-dir <path>` to `bench.py`.
 
 ## Layout
 
@@ -51,6 +55,6 @@ Raw: [`results/2026-05-12-c3-standard-192-metal-5way.json`](./results/2026-05-12
 
 | runtime | status | notes |
 |---|---|---|
-| cloud-hypervisor | adapter wrapper works in isolation but kernel panics on init reach in the bench loop | Wrapper at `adapters/cloud-hypervisor/run.sh` SIGPIPEs CH when the guest /init prints READY. Boots cleanly when invoked alone, but inside the bench loop the kernel panics before reaching userspace — likely a disk-device naming or virtio-blk config difference vs Firecracker. Needs deeper CH investigation. |
+| cloud-hypervisor | adapter wrapper works in isolation but kernel panics on init reach in the bench loop | Wrapper at `adapters/cloud-hypervisor/run.sh` SIGPIPEs CH when the guest /init prints READY. Boots cleanly when invoked alone, but inside the bench loop the kernel panics before reaching userspace, likely a disk-device naming or virtio-blk config difference vs Firecracker. Needs deeper CH investigation. |
 
 Methodology and analysis: [microsandbox.dev/blog/microvm-cold-start-benchmark](https://microsandbox.dev/blog/microvm-cold-start-benchmark).

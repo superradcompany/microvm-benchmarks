@@ -14,6 +14,7 @@ import statistics
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -61,6 +62,16 @@ def bench(
         print(f"  run {i+1}: {t*1000:.1f} ms", flush=True)
 
     samples_ms = [s * 1000 for s in samples]
+    p90 = (
+        statistics.quantiles(samples_ms, n=10)[-1]
+        if len(samples_ms) >= 10
+        else max(samples_ms)
+    )
+    p99 = (
+        statistics.quantiles(samples_ms, n=100)[-1]
+        if len(samples_ms) >= 100
+        else max(samples_ms)
+    )
     return {
         "label": label,
         "cmd": cmd,
@@ -71,11 +82,8 @@ def bench(
         "stdev_ms": statistics.stdev(samples_ms) if len(samples_ms) > 1 else 0.0,
         "min_ms": min(samples_ms),
         "max_ms": max(samples_ms),
-        "p90_ms": (
-            statistics.quantiles(samples_ms, n=10)[-1]
-            if len(samples_ms) >= 10
-            else max(samples_ms)
-        ),
+        "p90_ms": p90,
+        "p99_ms": p99,
     }
 
 
@@ -87,9 +95,15 @@ def main():
         "--bench-dir",
         type=Path,
         default=Path.home() / "bench",
-        help="Where setup.sh placed vmlinux/alpine.ext4/fc-config.json (default ~/bench)",
+        help="Where setup placed vmlinux/alpine.ext4/fc-config.json (default ~/bench). Artifact staging only; results land in results/.",
     )
-    ap.add_argument("--output", type=Path, default=None)
+    ap.add_argument("--run-name", default="bench")
+    ap.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Override the default benches/boot-time/results/<timestamp>-<runname>.json path",
+    )
     ap.add_argument(
         "--skip",
         action="append",
@@ -101,7 +115,15 @@ def main():
     )
     args = ap.parse_args()
 
-    output = args.output or (args.bench_dir / "results.json")
+    if args.output:
+        output = args.output
+    else:
+        results_dir = Path(__file__).resolve().parent / "results"
+        results_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in args.run_name)
+        output = results_dir / f"{ts}-{safe}.json"
+
     bins = runtime_paths()
     fc_config = args.bench_dir / "fc-config.json"
     vmlinux = args.bench_dir / "vmlinux"

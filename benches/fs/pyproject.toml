@@ -1,5 +1,5 @@
 [project]
-name = "microvm-benchmarks-fs"
+name = "sandbox-bench-fs"
 version = "0.1.0"
 description = "Filesystem benchmarks: microsandbox vs Docker"
 requires-python = ">=3.11"

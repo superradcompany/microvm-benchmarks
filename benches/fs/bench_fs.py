@@ -6,9 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
-import shutil
 import statistics
-import subprocess
 import sys
 import textwrap
 import time
@@ -16,6 +14,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from _common import require_bin
+from adapters import DockerAdapter, MicrosandboxAdapter
 
 
 #--------------------------------------------------------------------------------------------------
@@ -25,8 +26,7 @@ from typing import Any
 DEFAULT_IMAGE = "python:3.12-slim"
 DEFAULT_ITERATIONS = 100
 DEFAULT_TIMEOUT = 3600
-OUTPUT_DIR = Path("build/bench/fs")
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4  # v4: added p90_s / p99_s alongside the existing summary stats
 DOCKER_TMPFS_MOUNTS = ("/tmp",)
 
 # Guest-side harness. Workloads define `run_once() -> dict` and optionally
@@ -395,34 +395,10 @@ def build_guest_code(workload: str) -> str:
     return _GUEST_PREFIX + workload + _GUEST_SUFFIX
 
 
-def run_cmd(
-    cmd: list[str],
-    timeout: int,
-    check: bool = False,
-) -> subprocess.CompletedProcess[str]:
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    if check and proc.returncode != 0:
-        msg = proc.stderr.strip() or proc.stdout.strip() or f"failed: {' '.join(cmd)}"
-        raise RuntimeError(msg)
-    return proc
-
-
-def try_cleanup(cmd: list[str], timeout: int = 30) -> None:
-    try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except Exception:
-        pass
-
-
-def require_bin(path: str, label: str) -> str:
-    resolved = shutil.which(path)
-    if not resolved:
-        sys.exit(f"{label} not found: {path}")
-    return resolved
-
-
 def summarize(payload: dict[str, Any], wall_seconds: float) -> dict[str, Any]:
     times = payload["times"]
+    p90 = statistics.quantiles(times, n=10)[-1] if len(times) >= 10 else max(times)
+    p99 = statistics.quantiles(times, n=100)[-1] if len(times) >= 100 else max(times)
     return {
         **payload,
         "median_s": statistics.median(times),
@@ -430,16 +406,10 @@ def summarize(payload: dict[str, Any], wall_seconds: float) -> dict[str, Any]:
         "stdev_s": statistics.stdev(times) if len(times) > 1 else 0.0,
         "min_s": min(times),
         "max_s": max(times),
+        "p90_s": p90,
+        "p99_s": p99,
         "wall_s": wall_seconds,
     }
-
-
-def docker_run_cmd(docker: str, name: str, image: str) -> list[str]:
-    cmd = [docker, "run", "-d", "--name", name]
-    for mount in DOCKER_TMPFS_MOUNTS:
-        cmd.extend(["--tmpfs", mount])
-    cmd.extend([image, "sleep", "infinity"])
-    return cmd
 
 
 #--------------------------------------------------------------------------------------------------
@@ -449,20 +419,14 @@ def docker_run_cmd(docker: str, name: str, image: str) -> list[str]:
 
 def pull_images(
     images: list[str],
-    msb: str,
-    docker: str,
+    msb: MicrosandboxAdapter,
+    docker: DockerAdapter,
     timeout: int,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for image in images:
-        t0 = time.perf_counter()
-        run_cmd([docker, "pull", image], timeout=timeout, check=True)
-        docker_s = time.perf_counter() - t0
-
-        t0 = time.perf_counter()
-        run_cmd([msb, "pull", image, "--quiet"], timeout=timeout, check=True)
-        msb_s = time.perf_counter() - t0
-
+        docker_s = docker.pull_image(image, timeout)
+        msb_s = msb.pull_image(image, timeout)
         result[image] = {"docker_pull_s": docker_s, "msb_pull_s": msb_s}
     return result
 
@@ -472,8 +436,8 @@ def run_workload(
     guest_code: str,
     iterations: int,
     image: str,
-    msb: str,
-    docker: str,
+    msb: MicrosandboxAdapter,
+    docker: DockerAdapter,
     timeout: int,
 ) -> dict[str, Any]:
     suffix = uuid.uuid4().hex[:8]
@@ -482,39 +446,28 @@ def run_workload(
 
     result: dict[str, Any] = {}
     try:
-        run_cmd(
-            docker_run_cmd(docker, dkr_name, image),
-            timeout=timeout,
-            check=True,
-        )
-        run_cmd(
-            [msb, "create", "-n", msb_name, image, "--quiet"],
-            timeout=timeout,
-            check=True,
-        )
+        docker.start(image, dkr_name, timeout)
+        msb.start(image, msb_name, timeout)
 
-        runtimes = {
-            "docker": [docker, "exec", dkr_name, "python", "-c", guest_code, str(iterations)],
-            "microsandbox": [msb, "exec", msb_name, "--", "python", "-c", guest_code, str(iterations)],
-        }
-
-        for runtime, cmd in runtimes.items():
+        for label, adapter, instance in (
+            (docker.label, docker, dkr_name),
+            (msb.label, msb, msb_name),
+        ):
             t0 = time.perf_counter()
-            proc = run_cmd(cmd, timeout=timeout)
+            proc = adapter.exec_python(instance, guest_code, iterations, timeout)
             wall = time.perf_counter() - t0
 
             if proc.returncode == 0:
-                result[runtime] = summarize(json.loads(proc.stdout), wall)
+                result[label] = summarize(json.loads(proc.stdout), wall)
             else:
-                result[runtime] = {
+                result[label] = {
                     "error": proc.stderr.strip() or proc.stdout.strip(),
                     "returncode": proc.returncode,
                     "wall_s": wall,
                 }
     finally:
-        try_cleanup([docker, "rm", "-f", dkr_name])
-        try_cleanup([msb, "stop", msb_name])
-        try_cleanup([msb, "remove", msb_name])
+        docker.cleanup(dkr_name)
+        msb.cleanup(msb_name)
 
     return result
 
@@ -661,7 +614,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--msb-bin", default="msb")
     p.add_argument("--docker-bin", default="docker")
     p.add_argument("--run-name", default=None)
-    p.add_argument("--output", default=None)
+    p.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Override the default benches/fs/results/<timestamp>-<runname>.json path",
+    )
     p.add_argument("--baseline", default=None)
     p.add_argument("--skip-pull", action="store_true")
     p.add_argument("--workload", action="append", choices=sorted(WORKLOADS))
@@ -670,25 +628,24 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    msb = require_bin(args.msb_bin, "msb")
-    docker = require_bin(args.docker_bin, "docker")
+    docker = DockerAdapter(
+        require_bin(args.docker_bin, "docker"),
+        tmpfs_mounts=DOCKER_TMPFS_MOUNTS,
+    )
+    msb = MicrosandboxAdapter(require_bin(args.msb_bin, "msb"))
 
     run_name = args.run_name or "bench"
     images = args.image or [DEFAULT_IMAGE]
     workload_names = args.workload or list(WORKLOADS)
 
     if args.output:
-        out = Path(args.output)
+        out = args.output
     else:
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        results_dir = Path(__file__).resolve().parent / "results"
+        results_dir.mkdir(parents=True, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         safe = "".join(c if c.isalnum() or c in "-_" else "-" for c in run_name)
-        out = OUTPUT_DIR / f"{ts}-{safe}.json"
-
-    msb_ver = run_cmd([msb, "--version"], timeout=30, check=True).stdout.strip()
-    docker_ver = run_cmd(
-        [docker, "info", "--format", "{{.ServerVersion}}"], timeout=30, check=True
-    ).stdout.strip()
+        out = results_dir / f"{ts}-{safe}.json"
 
     doc: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -702,7 +659,7 @@ def main() -> int:
             "workloads": workload_names,
             "docker_tmpfs": list(DOCKER_TMPFS_MOUNTS),
         },
-        "versions": {"msb": msb_ver, "docker": docker_ver},
+        "versions": {"msb": msb.version(), "docker": docker.version()},
         "pull": None,
         "results": {},
     }
